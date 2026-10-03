@@ -1,0 +1,4 @@
+backend/bin/
+frontend/tmp/
+__pycache__/
+*.ppm
