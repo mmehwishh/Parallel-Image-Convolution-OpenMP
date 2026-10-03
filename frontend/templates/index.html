@@ -36,6 +36,8 @@
   .step { color:var(--green); border:1px solid #95b5a2; padding:6px 8px; }
   h2 { font-size:17px; margin:0; letter-spacing:0; }
   .form-section { padding:0 0 23px; margin:0 0 21px; border-bottom:1px solid var(--line); }
+  .workflow-guide { margin:-6px 0 18px; padding:10px 12px; border-left:3px solid var(--green); background:#edf3eb; color:#40554a; font-size:11px; line-height:1.65; }
+  .source-panel[hidden],.mode-field[hidden] { display:none; }
   .field { display:grid; gap:7px; margin:15px 0; }
   .field-label { display:flex; justify-content:space-between; gap:10px; font-size:12px; font-weight:700; }
   .hint { color:var(--muted); font-size:11px; line-height:1.55; }
@@ -127,6 +129,7 @@
   .benchmark-explainer b { color:var(--ink); }
   .benchmark-out { margin-top:20px; }
   .benchmark-preview { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,.9fr); gap:18px; align-items:center; margin-bottom:18px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+  .benchmark-images { display:grid; grid-template-columns:1fr 1fr; gap:10px; min-width:0; }
   .benchmark-preview h3 { margin:7px 0; font-size:15px; }
   .benchmark-preview p { margin:7px 0; color:var(--muted); font-size:11px; line-height:1.6; }
   .benchmark-preview img { display:block; width:100%; max-height:340px; aspect-ratio:4/3; object-fit:contain; background:#e9ebe5; border:1px solid var(--line); }
@@ -147,6 +150,7 @@
   @media(max-width:900px) { .worker-visual { grid-template-columns:minmax(0,1fr) 150px; gap:8px; } }
   @media(max-width:680px) { main { padding:25px 16px 48px; } .topbar-inner { padding:13px 16px; } .top-meta { display:none; } .intro { grid-template-columns:1fr; gap:16px; } .engine-status { max-width:none; } .workspace { grid-template-columns:1fr; } .result-empty { min-height:260px; } .benchmark-explainer { grid-template-columns:1fr; gap:8px; } footer { padding:16px; } }
   @media(max-width:680px) { .benchmark-preview { grid-template-columns:1fr; } }
+  @media(max-width:430px) { .benchmark-images { grid-template-columns:1fr; } }
   @media(max-width:520px) { .worker-visual { grid-template-columns:1fr; } .worker-legend { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:180px; } }
   @media(max-width:430px) { .field-grid { grid-template-columns:1fr; } .images { grid-template-columns:1fr; } .stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .benchmark-grid { grid-template-columns:1fr 1fr; } .result-title { flex-direction:column; gap:5px; } }
 </style>
@@ -170,33 +174,56 @@
 
   <div class="workspace">
     <section class="controls" aria-labelledby="image-heading">
-      <div class="section-head"><span class="step">01 / IMAGE</span><h2 id="image-heading">Choose work</h2></div>
+      <div class="section-head"><span class="step">01 / SOURCE</span><h2 id="image-heading">Choose an image</h2></div>
       <form id="procForm">
         <div class="form-section">
-          <label class="file-drop" id="dropZone" for="images">
-            <span class="file-icon">[ + ]</span>
-            <span class="file-main">Drop images here or browse</span>
-            <span class="file-sub">PNG, JPEG, BMP, TIFF · up to 5 images · 200 MB total</span>
-            <input id="images" type="file" name="images" accept="image/*" multiple required>
-          </label>
-          <ul class="file-list" id="fileList" aria-live="polite"></ul>
+          <div class="segmented" role="radiogroup" aria-label="Image source">
+            <label><input type="radio" name="source" value="upload" checked><span>Upload my image</span></label>
+            <label><input type="radio" name="source" value="synthetic"><span>Generate test image</span></label>
+          </div>
+          <p class="hint" id="sourceHint" style="margin:8px 0 12px">Use your own PNG, JPEG, BMP, or TIFF image. Up to 5 images can be filtered together.</p>
+          <div class="source-panel" id="uploadPanel">
+            <label class="file-drop" id="dropZone" for="images">
+              <span class="file-icon">[ + ]</span>
+              <span class="file-main">Drop images here or browse</span>
+              <span class="file-sub">PNG, JPEG, BMP, TIFF · up to 5 images · 200 MB total</span>
+              <input id="images" type="file" name="images" accept="image/*" multiple required>
+            </label>
+            <ul class="file-list" id="fileList" aria-live="polite"></ul>
+          </div>
+          <div class="source-panel" id="syntheticPanel" hidden>
+            <label class="field"><span class="field-label">Test image width and height</span>
+              <input type="number" name="size" id="syntheticSize" value="3000" min="500" max="8000" step="500" required>
+              <span class="hint">N means N×N pixels. Example: 3000 creates a 3000×3000 RGB test image in C++.</span>
+            </label>
+          </div>
           <div class="field-grid">
             <label class="field"><span class="field-label">Filter</span>
               <select name="filter" id="filterSelect">{% for f in filters %}<option value="{{ f }}">{{ {'gaussian':'Gaussian blur','blur':'Box blur','sharpen':'Sharpen','edge':'Laplacian edge','sobel':'Sobel edge','emboss':'Emboss'}[f] }}</option>{% endfor %}</select>
             </label>
-            <label class="field"><span class="field-label">Kernel size <span class="hint">odd, 3-51</span></span>
-              <input type="number" name="ksize" value="9" min="3" max="51" step="2" required>
+            <label class="field"><span class="field-label">Kernel size <span class="hint" id="procKernelMode">odd, 3-51</span></span>
+              <input type="number" name="ksize" id="procKsize" value="9" min="3" max="51" step="2" required>
             </label>
           </div>
           <div class="hint" id="filterHint">Smooths noise while preserving a natural-looking falloff from nearby pixels.</div>
+          <p class="hint" id="procKernelHint">For blur filters, the kernel is the square neighborhood used around each pixel. A 3×3 kernel checks 9 neighbors; 9×9 checks 81. Larger kernels take more work and usually create a broader blur.</p>
           <details>
             <summary>What do the filters do?</summary>
             <div class="explanation">
               <p><b>Gaussian blur:</b> weighted smoothing; nearby pixels count more. <b>Box blur:</b> averages an equally sized neighbourhood.</p>
               <p><b>Sharpen:</b> emphasizes local contrast. <b>Laplacian edge:</b> highlights rapid intensity changes. <b>Sobel edge:</b> estimates horizontal and vertical gradients. <b>Emboss:</b> adds directional relief.</p>
-              <p>Kernel size is the width and height of the pixel neighbourhood. Larger kernels do more work per output pixel. Edge pixels use clamp-to-edge padding.</p>
+              <p>Gaussian and box blur use the chosen kernel size. Sharpen, edge, Sobel, and emboss use fixed 3×3 kernels. Edge pixels use clamp-to-edge padding.</p>
             </div>
           </details>
+        </div>
+
+        <div class="form-section">
+          <div class="field-label">What do you want to do?</div>
+          <div class="segmented" role="radiogroup" aria-label="Run mode">
+            <label><input type="radio" name="task" value="filter" checked><span>Filter image</span></label>
+            <label><input type="radio" name="task" value="scale"><span>Measure scalability</span></label>
+          </div>
+          <p class="hint" id="taskHint" style="margin-top:8px">Apply the filter once with your chosen strategy. Compare the result with a sequential reference.</p>
         </div>
 
         <div class="form-section">
@@ -207,8 +234,12 @@
           </div>
           <div class="hint" id="modeHint" style="margin-top:7px">OpenMP assigns image rows to workers using static scheduling.</div>
           <div class="field-grid">
-            <label class="field"><span class="field-label">OpenMP threads <span class="hint">logical CPU cores: {{ cpus }}</span></span>
-              <input type="number" name="threads" value="{{ cpus }}" min="1" max="256" required>
+            <label class="field mode-field" id="singleThreadsField"><span class="field-label">OpenMP threads <span class="hint">logical CPU cores: {{ cpus }}</span></span>
+              <input type="number" name="threads" id="singleThreads" value="{{ cpus }}" min="1" max="256" required>
+            </label>
+            <label class="field mode-field" id="scaleThreadsField" hidden><span class="field-label">Thread counts to compare</span>
+              <input type="text" name="scale_threads" id="scaleThreads" value="1,2,4,8" required>
+              <span class="hint">One run per count, separated by commas.</span>
             </label>
             <div class="field"><span class="field-label">Pixel channels</span>
               <label class="checkline"><input type="checkbox" name="gray"> Process as grayscale</label>
@@ -216,7 +247,7 @@
           </div>
           <div class="hint">Each output pixel reads only the original input, so pixels can be computed independently. The UI also runs a sequential reference for timing and exact-output verification.</div>
         </div>
-        <button class="primary" id="procBtn" type="submit"><span>Run image filter</span><span aria-hidden="true">-&gt;</span></button>
+        <button class="primary" id="procBtn" type="submit"><span id="runButtonLabel">Run image filter</span><span aria-hidden="true">-&gt;</span></button>
       </form>
       <div class="message" id="procMsg" role="status" aria-live="polite"></div>
       <details>
@@ -254,48 +285,37 @@
         </div>
       </div>
       <div id="procResults"></div>
+      <div class="benchmark-out" id="benchOut" hidden>
+        <div class="benchmark-preview">
+          <div class="benchmark-images">
+            <figure>
+              <figcaption id="benchmarkPreviewCaption">Selected input</figcaption>
+              <img id="benchmarkPreview" alt="Preview of the selected image used for the scalability test">
+            </figure>
+            <figure>
+              <figcaption>Filtered result</figcaption>
+              <img id="benchmarkResultPreview" alt="Filtered image produced by the last scalability run">
+            </figure>
+          </div>
+          <div>
+            <div class="eyebrow">Same image · same filter</div>
+            <h3>Scalability run</h3>
+            <p id="benchmarkImageDescription"></p>
+            <p id="benchmarkRunDetails" class="mono"></p>
+            <p id="benchmarkVerification"></p>
+            <p>Only the thread count changes between runs. The previews are resized for display; the engine processes the full-size source.</p>
+          </div>
+        </div>
+        <div class="charts">
+          <div class="chart-box"><svg id="cTime" aria-label="Execution time chart"></svg></div>
+          <div class="chart-box"><svg id="cSpeed" aria-label="Speedup chart"></svg></div>
+          <div class="chart-box"><svg id="cEff" aria-label="Efficiency chart"></svg></div>
+        </div>
+        <div class="table-wrap"><table id="benchTable"></table></div>
+      </div>
     </section>
   </div>
 
-  <section class="benchmark" aria-labelledby="benchmark-heading">
-    <div class="section-head"><span class="step">03 / SCALE</span><h2 id="benchmark-heading">Measure scalability</h2></div>
-    <p class="hint" style="max-width:760px;margin:-7px 0 17px">This separate benchmark generates its own square RGB image in C++; it does not use the uploaded images above. It measures a sequential baseline, then your selected OpenMP strategy at each thread count.</p>
-    <form id="benchForm" class="benchmark-grid">
-      <label class="field"><span class="field-label">Image side</span><input type="number" name="size" value="3000" min="500" max="8000" step="500" required></label>
-      <label class="field"><span class="field-label">Filter</span><select name="filter">{% for f in filters %}<option value="{{ f }}">{{ {'gaussian':'Gaussian blur','blur':'Box blur','sharpen':'Sharpen','edge':'Laplacian edge','sobel':'Sobel edge','emboss':'Emboss'}[f] }}</option>{% endfor %}</select></label>
-      <label class="field"><span class="field-label">Kernel</span><input type="number" name="ksize" value="9" min="3" max="51" step="2" required></label>
-      <label class="field"><span class="field-label">Parallel strategy</span><select name="mode"><option value="rows">Rows</option><option value="tiles">Tiles</option></select></label>
-      <label class="field"><span class="field-label">Thread counts <span class="hint">comma-separated</span></span><input type="text" name="threads" value="1,2,4,8" required></label>
-      <button class="primary" id="benchBtn" type="submit"><span>Run benchmark</span><span aria-hidden="true">-&gt;</span></button>
-    </form>
-    <div class="benchmark-explainer">
-      <p><b>Speedup:</b> sequential time divided by parallel time. Above 1× is faster; below 1× means overhead outweighed parallel gains.</p>
-      <p><b>Efficiency:</b> speedup divided by thread count. It shows how effectively the available worker threads are being used.</p>
-      <p><b>Verification:</b> the engine compares every output byte with sequential output. A correct parallel run reports an exact match.</p>
-    </div>
-    <div class="message" id="benchMsg" role="status" aria-live="polite"></div>
-    <div class="benchmark-out" id="benchOut" hidden>
-      <div class="benchmark-preview">
-        <figure>
-          <figcaption id="benchmarkPreviewCaption">C++ generated input · full-size preview</figcaption>
-          <img id="benchmarkPreview" alt="Preview of the synthetic input used for this benchmark">
-        </figure>
-        <div>
-          <div class="eyebrow">The image being benchmarked</div>
-          <h3>Generated input, before filtering</h3>
-          <p id="benchmarkImageDescription"></p>
-          <p id="benchmarkRunDetails" class="mono"></p>
-          <p>The picture above is downscaled only for display. Timing uses the full-size source shown in the settings. Its rings, gradient, and checkerboard make the filter's work visible.</p>
-        </div>
-      </div>
-      <div class="charts">
-        <div class="chart-box"><svg id="cTime" aria-label="Execution time chart"></svg></div>
-        <div class="chart-box"><svg id="cSpeed" aria-label="Speedup chart"></svg></div>
-        <div class="chart-box"><svg id="cEff" aria-label="Efficiency chart"></svg></div>
-      </div>
-      <div class="table-wrap"><table id="benchTable"></table></div>
-    </div>
-  </section>
 </main>
 <footer>Parallel Image Convolution / Filtering · OpenMP shared-memory parallelism on one multi-core node · Processing runs locally</footer>
 
@@ -348,9 +368,70 @@ document.querySelectorAll('input[name="mode"]').forEach(input => input.addEventL
     : 'OpenMP splits the image into 64 × 64 tiles and dynamically schedules them.';
 }));
 
+function updateKernelControl(filter, input, mode, hint) {
+  const adjustable = filter.value === 'gaussian' || filter.value === 'blur';
+  if (!adjustable && !input.disabled) input.dataset.lastAdjustableValue = input.value;
+  input.disabled = !adjustable;
+  if (adjustable && input.dataset.lastAdjustableValue) input.value = input.dataset.lastAdjustableValue;
+  if (!adjustable) input.value = '3';
+  mode.textContent = adjustable ? 'odd, 3-51' : 'fixed 3×3';
+  hint.textContent = adjustable
+    ? 'Kernel is the square pixel neighborhood. 3×3 checks 9 pixels; 9×9 checks 81. Larger blur kernels take more work.'
+    : 'This filter always uses a fixed 3×3 kernel. Kernel size only changes Gaussian and box blur.';
+}
+
+const procFilter = $('#filterSelect');
+const procKsize = $('#procKsize');
+procFilter.addEventListener('change', () => {
+  $('#filterHint').textContent = filterDescriptions[procFilter.value];
+  updateKernelControl(procFilter,procKsize,$('#procKernelMode'),$('#procKernelHint'));
+});
+updateKernelControl(procFilter,procKsize,$('#procKernelMode'),$('#procKernelHint'));
+
+const procForm = $('#procForm');
+const sizeInput = $('#syntheticSize');
+const singleThreads = $('#singleThreads');
+const scaleThreads = $('#scaleThreads');
+
+function updateRunControls() {
+  const source = procForm.querySelector('input[name="source"]:checked').value;
+  const task = procForm.querySelector('input[name="task"]:checked').value;
+  const generated = source === 'synthetic';
+  const scaling = task === 'scale';
+  $('#uploadPanel').hidden = generated;
+  $('#syntheticPanel').hidden = !generated;
+  fileInput.required = !generated;
+  sizeInput.required = generated;
+  $('#singleThreadsField').hidden = scaling;
+  $('#scaleThreadsField').hidden = !scaling;
+  singleThreads.required = !scaling;
+  scaleThreads.required = scaling;
+  $('#sourceHint').textContent = generated
+    ? 'Generate a deterministic test image in C++. The same pixels are used for filtering and every scalability run.'
+    : scaling
+      ? 'Choose one photo: scalability runs will reuse this exact image for every thread count.'
+      : 'Use your own PNG, JPEG, BMP, or TIFF image. Up to 5 images can be filtered together.';
+  $('#taskHint').textContent = scaling
+    ? 'Keep source, filter, and kernel fixed; only the thread count changes. Results include the filtered output, correctness checks, and performance charts.'
+    : generated
+      ? 'Apply the filter to the generated image and compare its output with a sequential reference.'
+      : 'Apply the filter to your uploaded image(s) and compare each output with a sequential reference.';
+  $('#runButtonLabel').textContent = scaling ? 'Run scalability test' : 'Run image filter';
+}
+
+document.querySelectorAll('input[name="source"],input[name="task"]').forEach(input => input.addEventListener('change',updateRunControls));
+updateRunControls();
+
 function showMessage(node, text, isError) {
   node.textContent = text;
   node.className = text ? `message ${isError ? 'error' : 'success'}` : 'message';
+}
+
+function explainRequestError(error) {
+  if (error instanceof TypeError) {
+    return 'The browser lost its connection to Flask. Refresh this page if the app just restarted, then retry. If it continues, check the Flask terminal.';
+  }
+  return `${error.message} Check the selected source and C++ engine status.`;
 }
 
 async function* readEventStream(response) {
@@ -427,18 +508,18 @@ function setupWorkerMap(progress) {
     state.lanes.push({lane,percent,fill,status});
   }
   const file = fileInput.files[progress.index - 1];
-  if (file) {
+  if (file || progress.preview) {
     const source = new Image();
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = file ? URL.createObjectURL(file) : null;
     source.onload = () => {
-      URL.revokeObjectURL(objectUrl);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       if (workerMap !== state) return;
       state.image = source;
       state.context.drawImage(source,0,0,canvas.width,canvas.height);
       state.regions.forEach(region => paintWorkerRegion(state,region));
     };
-    source.onerror = () => URL.revokeObjectURL(objectUrl);
-    source.src = objectUrl;
+    source.onerror = () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    source.src = objectUrl || progress.preview;
   }
 }
 
@@ -529,20 +610,23 @@ function renderImageResult(result) {
   footer.append(note,download); card.append(heading,images,stats,footer); return card;
 }
 
-$('#procForm').addEventListener('submit', async event => {
-  event.preventDefault();
+async function runImageFilter() {
   const files = [...fileInput.files];
-  if (!files.length || files.length > 5) {
-    showMessage($('#procMsg'), files.length ? 'Choose no more than 5 images per batch.' : 'Choose at least one image first.', true);
+  const source = procForm.querySelector('input[name="source"]:checked').value;
+  if (source === 'upload' && (!files.length || files.length > 5)) {
+    showMessage($('#procMsg'), files.length ? 'Choose no more than 5 images per batch.' : 'Choose an image, or switch to Generate test image.', true);
     return;
   }
-  const button = $('#procBtn'); button.disabled = true;
+  const button = $('#procBtn');
+  const total = source === 'synthetic' ? 1 : files.length;
+  button.disabled = true;
   $('#procResults').replaceChildren(); $('#resultEmpty').hidden = true;
+  $('#benchOut').hidden = true;
   $('#liveProgress').hidden = true;
   workerMap = null;
-  showMessage($('#procMsg'), `Starting ${files.length} image${files.length === 1 ? '' : 's'}...`, false);
+  showMessage($('#procMsg'), `Starting ${total} image${total === 1 ? '' : 's'}...`, false);
   try {
-    const response = await fetch('/api/process',{method:'POST',body:new FormData(event.target)});
+    const response = await fetch('/api/process',{method:'POST',body:new FormData(procForm)});
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || `Request failed (${response.status}).`);
@@ -562,10 +646,10 @@ $('#procForm').addEventListener('submit', async event => {
   } catch (error) {
     $('#liveProgress').classList.add('failed');
     if (!$('#liveProgress').hidden) $('#liveTitle').textContent = 'Processing stopped';
-    showMessage($('#procMsg'),`${error.message} Check that the C++ engine is built and Flask is running.`,true);
+    showMessage($('#procMsg'),explainRequestError(error),true);
     if (!$('#procResults').childElementCount) $('#resultEmpty').hidden = false;
   } finally { button.disabled = false; }
-});
+}
 
 function drawChart(selector,title,labels,values,color,ideal=false) {
   const svg = $(selector);
@@ -609,47 +693,82 @@ function drawChart(selector,title,labels,values,color,ideal=false) {
   add('text',{x:15,y:(top+bottom)/2,transform:`rotate(-90 15 ${(top+bottom)/2})`,'text-anchor':'middle',fill:'#64716b','font-size':'10'},title === 'Efficiency (%)' ? 'Percent' : title === 'Speedup' ? 'Factor' : 'Milliseconds');
 }
 
-$('#benchForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = new FormData(event.target);
-  const threadText = form.get('threads').trim();
+async function runScalabilityTest() {
+  const form = new FormData(procForm);
+  const source = form.get('source');
+  const files = [...fileInput.files];
+  if (source === 'upload' && files.length !== 1) {
+    showMessage($('#procMsg'),'Scalability needs exactly one uploaded image. Choose one file, or switch to a generated image.',true);
+    return;
+  }
+  const threadText = form.get('scale_threads').trim();
   const threadValues = threadText.split(',').map(value => Number(value.trim()));
   if (!threadText || threadValues.some(value => !Number.isInteger(value) || value < 1 || value > 256) || threadValues.length > 16) {
-    showMessage($('#benchMsg'),'Enter 1-16 whole thread counts between 1 and 256, separated by commas.',true); return;
+    showMessage($('#procMsg'),'Enter 1-16 whole thread counts between 1 and 256, separated by commas.',true); return;
   }
-  const body = {size:Number(form.get('size')),filter:form.get('filter'),ksize:Number(form.get('ksize')),mode:form.get('mode'),threads:[...new Set(threadValues)]};
-  const button = $('#benchBtn'); button.disabled = true;
-  showMessage($('#benchMsg'),'Benchmark running. Large images and kernels can take several minutes; keep this page open.',false);
+  const body = {
+    size:Number(form.get('size')), filter:form.get('filter'), ksize:Number(form.get('ksize') || 3),
+    mode:form.get('mode'), threads:[...new Set(threadValues)], gray:form.get('gray') === 'on'
+  };
+  const button = $('#procBtn'); button.disabled = true;
+  $('#procResults').replaceChildren(); $('#liveProgress').hidden = true;
+  $('#resultEmpty').hidden = true; $('#benchOut').hidden = true;
+  showMessage($('#procMsg'),'Running a sequential baseline and repeating the same input/filter with each thread count. This can take several minutes for large images.',false);
   try {
-    const response = await fetch('/api/benchmark',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    let options;
+    if (source === 'synthetic') {
+      options = {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
+    } else {
+      const payload = new FormData();
+      payload.append('image',files[0]);
+      payload.append('filter',body.filter);
+      payload.append('ksize',body.ksize);
+      payload.append('mode',body.mode);
+      payload.append('threads',body.threads.join(','));
+      if (body.gray) payload.append('gray','on');
+      options = {method:'POST',body:payload};
+    }
+    const response = await fetch('/api/benchmark',options);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
-    $('#benchmarkPreview').src = data.synthetic_preview;
-    $('#benchmarkPreviewCaption').textContent = `C++ generated input · ${data.size} × ${data.size} · RGB`;
-    $('#benchmarkImageDescription').textContent = `The C++ engine generates a ${data.size} × ${data.size} RGB image with concentric rings, a gradient, and checkerboard regions. The same deterministic image is generated for the sequential baseline and each ${body.mode}-wise OpenMP run.`;
-    $('#benchmarkRunDetails').textContent = `Filter: ${body.filter} · Kernel: ${body.ksize} × ${body.ksize} · Threads: ${body.threads.join(', ')}`;
+    $('#benchmarkPreview').src = data.original_preview;
+    $('#benchmarkResultPreview').src = data.filtered_preview;
+    $('#benchmarkPreviewCaption').textContent = `Input · ${data.source} · ${data.width} × ${data.height}`;
+    $('#benchmarkImageDescription').textContent = source === 'synthetic'
+      ? 'C++ generated this deterministic RGB test image with rings, a gradient, and checkerboard regions.'
+      : 'This is your uploaded image, converted for the C++ engine. The same source pixels are reused for the sequential reference and every thread-count run.';
+    $('#benchmarkRunDetails').textContent = `Filter: ${body.filter} · Kernel: ${body.ksize} × ${body.ksize} · Strategy: ${body.mode} · Threads: ${body.threads.join(', ')}`;
+    const verifiedCount = data.rows.filter(row => row.verified).length;
+    $('#benchmarkVerification').textContent = `${verifiedCount} of ${data.rows.length} parallel outputs exactly match the sequential reference. The filtered preview uses ${data.filtered_threads} thread(s).`;
     const labels = data.rows.map(row => row.threads);
     drawChart('#cTime','Execution time (ms)',labels,data.rows.map(row => row.time_ms),'#176b50');
     drawChart('#cSpeed','Speedup',labels,data.rows.map(row => row.speedup),'#bd7429',true);
     drawChart('#cEff','Efficiency (%)',labels,data.rows.map(row => row.efficiency),'#367e9b');
     const table = $('#benchTable'); table.replaceChildren();
     const head = document.createElement('tr');
-    ['Run','Threads','Time (ms)','Speedup','Efficiency'].forEach(label => {const th=document.createElement('th');th.textContent=label;head.append(th);});
+    ['Run','Threads','Time (ms)','Speedup','Efficiency','Correct'].forEach(label => {const th=document.createElement('th');th.textContent=label;head.append(th);});
     table.append(head);
     const bodyRows = [
-      {run:'Sequential baseline',threads:1,time_ms:data.seq_ms,speedup:1,efficiency:100},
+      {run:'Sequential baseline',threads:1,time_ms:data.seq_ms,speedup:1,efficiency:100,verified:'Reference'},
       ...data.rows.map(row => ({run:`OpenMP ${body.mode}`,threads:row.threads,...row}))
     ];
     for (const row of bodyRows) {
       const tr=document.createElement('tr');
-      [row.run,row.threads,row.time_ms.toFixed(1),Number(row.speedup).toFixed(2),`${Number(row.efficiency).toFixed(1)}%`].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});
+      [row.run,row.threads,row.time_ms.toFixed(1),Number(row.speedup).toFixed(2),`${Number(row.efficiency).toFixed(1)}%`,typeof row.verified === 'boolean' ? row.verified ? 'Exact' : 'Mismatch' : row.verified].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td);});
       table.append(tr);
     }
     $('#benchOut').hidden = false;
-    showMessage($('#benchMsg'),`Finished: ${data.size} × ${data.size} synthetic RGB image. Times measure filtering only; image generation and verification are outside the timed section.`,false);
+    showMessage($('#procMsg'),`Scalability test finished for ${data.source}. The displayed filtered result came from the last thread-count run.`,false);
   } catch (error) {
-    showMessage($('#benchMsg'),`${error.message} Check the image size, kernel, thread list, and C++ engine status.`,true);
+    showMessage($('#procMsg'),explainRequestError(error),true);
   } finally { button.disabled = false; }
+}
+
+procForm.addEventListener('submit',event => {
+  event.preventDefault();
+  const task = procForm.querySelector('input[name="task"]:checked').value;
+  if (task === 'scale') runScalabilityTest();
+  else runImageFilter();
 });
 </script>
 </body>

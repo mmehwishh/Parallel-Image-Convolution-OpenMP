@@ -1,13 +1,13 @@
 # Parallel Image Convolution / Filtering
 
-A Parallel and Distributed Computing course project that applies image filters using C++17 and OpenMP on a single multi-core node. The Flask UI accepts real images, runs sequential and parallel versions, checks correctness, and reports performance. A separate benchmark measures how performance changes with image size and thread count.
+A Parallel and Distributed Computing course project that applies image filters using C++17 and OpenMP on a single multi-core node. The Flask UI lets you upload an image or generate a synthetic one, choose a filter, then either inspect one filtered result or measure scalability on that same source across thread counts.
 
 ## How the project works
 
-1. The browser uploads up to five images. Flask/Pillow reads common image formats and converts each image to the PPM format used by the C++ engine. Grayscale is optional; otherwise pixels are processed as RGB.
+1. Choose up to five uploaded images or generate one synthetic test image. Flask/Pillow converts uploads to the PPM format used by the C++ engine. Grayscale is optional; otherwise pixels are processed as RGB.
 2. The C++ engine applies a convolution kernel. For each output pixel it multiplies the surrounding `k x k` pixels by kernel weights and sums them. Image boundaries use clamp-to-edge padding.
-3. The engine first measures the sequential implementation, then the selected OpenMP strategy. In row mode, OpenMP statically schedules rows. In tile mode, it dynamically schedules 64 x 64 image regions.
-4. The engine compares parallel output with sequential output byte by byte. Flask returns the previews, timings, speedup, efficiency, and a full-resolution PNG download.
+3. Choose **Filter image** for one sequential-versus-parallel result, or **Measure scalability** to compare several thread counts. Scalability reuses the selected source, filter, and kernel; only the thread count changes. In row mode, OpenMP statically schedules rows. In tile mode, it dynamically schedules 64 x 64 image regions.
+4. The engine compares parallel output with sequential output byte by byte. Flask returns the input and filtered previews, timings, speedup, efficiency, and correctness results.
 
 Each output pixel reads only the unchanged input image, so different output pixels can be computed independently. The approximate work is `O(width x height x channels x kernel_size^2)`.
 
@@ -41,7 +41,7 @@ python app.py
 
 Open <http://127.0.0.1:5000>. The app also checks the default MSYS2 path automatically. If MSYS2 is installed elsewhere, set `MSYS2_UCRT64_BIN` to that installation's `ucrt64\bin` directory before starting Flask. This ensures Windows loads the UCRT64 `libgomp-1.dll` used by the compiled engine instead of a conflicting runtime earlier on `PATH`.
 
-In the UI, choose one or more images, filter, kernel size, row/tile strategy, and thread count, then select **Run image filter**. Each image displays its original and filtered preview, sequential and parallel times, speedup, efficiency, correctness result, and full-size PNG download. Open the filter and run help sections in the UI for control descriptions.
+In the UI, first choose **Upload my image** or **Generate test image**, then set the filter, kernel size, and row/tile strategy. **Filter image** applies one thread count and shows the output; **Measure scalability** reuses that same input and settings for every listed thread count, showing input/output previews, charts, and per-run correctness. Open the filter help in the UI for kernel details.
 
 ## Run the benchmark
 
@@ -53,7 +53,7 @@ python -m pip install -r requirements.txt
 python run_benchmark.py --size 3000 --filter gaussian --ksize 9 --repeat 3 --threads 1,2,4,8
 ```
 
-The script writes `benchmark/results/benchmark.csv` and execution-time, speedup, and efficiency charts. The web UI also displays a downscaled preview generated from the same deterministic C++ synthetic input used by the benchmark; the computation still uses the full-size image, not uploaded files. Use a smaller image/kernel for a quick smoke run; larger sizes and kernels take substantially longer. Close other heavy applications for more stable timing.
+The script writes `benchmark/results/benchmark.csv` and execution-time, speedup, and efficiency charts using a deterministic synthetic input. In the web UI, scalability can instead use either the selected uploaded image or a generated image; its downscaled preview is only for display, while computation uses the full-size source. Use a smaller image/kernel for a quick smoke run; larger sizes and kernels take substantially longer. Close other heavy applications for more stable timing.
 
 Speedup is `sequential_time / parallel_time`; values above `1` mean the parallel run was faster. Efficiency is `speedup / thread_count x 100%`. Efficiency can fall as threads increase because of memory bandwidth, scheduling overhead, and the serial portion of execution. Timings measure convolution only, not file conversion, image generation, or correctness verification.
 
