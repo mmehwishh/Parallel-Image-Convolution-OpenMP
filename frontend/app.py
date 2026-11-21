@@ -333,6 +333,14 @@ def benchmark():
 
     preview_dir = TMP / f"benchmark-{uuid.uuid4().hex}"
     preview_dir.mkdir()
+    staged_image_path = None
+    if not is_synthetic:
+        try:
+            staged_image_path = preview_dir / "uploaded-input"
+            image_file.save(staged_image_path)
+        except Exception as exc:
+            shutil.rmtree(preview_dir, ignore_errors=True)
+            return jsonify(error=f"Could not stage the uploaded image: {exc}"), 500
 
     def generate_benchmark():
         try:
@@ -346,7 +354,7 @@ def benchmark():
                 source_name = f"Synthetic {size} × {size}"
             else:
                 gray = d.get("gray") == "on"
-                with Image.open(image_file.stream) as source_image:
+                with Image.open(staged_image_path) as source_image:
                     image = source_image.convert("L" if gray else "RGB")
                 width, height = image.size
                 input_path = preview_dir / "input.ppm"
