@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-web%20UI-000000?logo=flask&logoColor=white)
 
-[Demo Video](https://drive.google.com/drive/home?dmr=1&ec=wgc-drive-%5Bmodule%5D-goto) · [Features](#features) · [Results](#results) · [Getting Started](#getting-started)
+[Demo Video](https://drive.google.com/file/d/1AFG4Iz2Corpuiat5pPqWSVqTxB7nw0Wu/view?usp=sharing) · [Features](#features) · [Results](#results) · [Getting Started](#getting-started)
 
 </div>
 
@@ -49,7 +49,7 @@ This project implements image convolution in **C++17** with **OpenMP**, compares
 
 ## Demo
 
-> 🎥 **Demo video:** [Watch on Google Drive](YOUR_DRIVE_LINK)
+> 🎥 **Demo video:** [Watch on Google Drive](https://drive.google.com/file/d/1AFG4Iz2Corpuiat5pPqWSVqTxB7nw0Wu/view?usp=sharing)
 
 ![Web interface](docs/images/ui-home.png)
 
