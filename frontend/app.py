@@ -333,51 +333,79 @@ def benchmark():
 
     preview_dir = TMP / f"benchmark-{uuid.uuid4().hex}"
     preview_dir.mkdir()
-    try:
-        if is_synthetic:
-            common = ["--generate", f"{size}x{size}", "--channels", 1 if d.get("gray") else 3,
-                      "--filter", flt, "--ksize", ksize]
-            width = height = size
-            preview_path = preview_dir / "input-preview.ppm"
-            sequential_args = common + ["--mode", "seq", "--preview-output", preview_path]
-            original_preview_source = preview_path
-            source_name = f"Synthetic {size} × {size}"
-        else:
-            gray = d.get("gray") == "on"
-            with Image.open(image_file.stream) as source_image:
-                image = source_image.convert("L" if gray else "RGB")
-            width, height = image.size
-            input_path = preview_dir / "input.ppm"
-            image.save(input_path, format="PPM")
-            common = ["--input", input_path, "--filter", flt, "--ksize", ksize]
-            sequential_args = common + ["--mode", "seq"]
-            original_preview_source = image
-            source_name = Path(image_file.filename).name
 
-        seq = run_engine(sequential_args)
-        rows = []
-        output_path = preview_dir / "filtered.ppm"
-        for t in threads:
-            r = run_engine(common + [
-                "--mode", mode, "--threads", t,
-                "--output", output_path, "--verify",
-            ])
-            sp = seq["avg_ms"] / r["avg_ms"] if r["avg_ms"] else 0
-            rows.append(dict(
-                threads=t, time_ms=r["avg_ms"], speedup=round(sp, 3),
-                efficiency=round(sp / t * 100, 1), verified=r["verified"],
+    def generate_benchmark():
+        try:
+            if is_synthetic:
+                common = ["--generate", f"{size}x{size}", "--channels", 1 if d.get("gray") else 3,
+                          "--filter", flt, "--ksize", ksize]
+                width = height = size
+                preview_path = preview_dir / "input-preview.ppm"
+                sequential_args = common + ["--mode", "seq", "--preview-output", preview_path]
+                original_preview_source = preview_path
+                source_name = f"Synthetic {size} × {size}"
+            else:
+                gray = d.get("gray") == "on"
+                with Image.open(image_file.stream) as source_image:
+                    image = source_image.convert("L" if gray else "RGB")
+                width, height = image.size
+                input_path = preview_dir / "input.ppm"
+                image.save(input_path, format="PPM")
+                common = ["--input", input_path, "--filter", flt, "--ksize", ksize]
+                sequential_args = common + ["--mode", "seq"]
+                original_preview_source = image
+                source_name = Path(image_file.filename).name
+
+            yield stream_event("progress", dict(
+                phase="prepare", filename=source_name,
+                detail=("Generating the synthetic image and preparing the benchmark source."
+                        if is_synthetic else "Preparing the uploaded image for the C++ engine."),
             ))
-        return jsonify(
-            seq_ms=seq["avg_ms"], rows=rows, size=size,
-            width=width, height=height, source=source_name,
-            original_preview=to_data_url(original_preview_source, max_side=600),
-            filtered_preview=to_data_url(output_path, max_side=600),
-            filtered_threads=threads[-1],
-        )
-    except Exception as e:
-        return jsonify(error=str(e)), 500
-    finally:
-        shutil.rmtree(preview_dir, ignore_errors=True)
+            seq = run_engine(sequential_args)
+            yield stream_event("progress", dict(
+                phase="sequential", filename=source_name,
+                detail=f"Sequential baseline complete: {seq['avg_ms']:.1f} ms.",
+            ))
+
+            rows = []
+            output_path = preview_dir / "filtered.ppm"
+            for index, t in enumerate(threads, start=1):
+                yield stream_event("progress", dict(
+                    phase="parallel", filename=source_name,
+                    detail=f"Running OpenMP test {index}/{len(threads)} with {t} thread(s).",
+                ))
+                r = run_engine(common + [
+                    "--mode", mode, "--threads", t,
+                    "--output", output_path, "--verify",
+                ])
+                sp = seq["avg_ms"] / r["avg_ms"] if r["avg_ms"] else 0
+                rows.append(dict(
+                    threads=t, time_ms=r["avg_ms"], speedup=round(sp, 3),
+                    efficiency=round(sp / t * 100, 1), verified=r["verified"],
+                ))
+
+            yield stream_event("progress", dict(
+                phase="preview", filename=source_name,
+                detail="Building the benchmark charts and result previews.",
+            ))
+            yield stream_event("result", dict(
+                seq_ms=seq["avg_ms"], rows=rows, size=size,
+                width=width, height=height, source=source_name,
+                original_preview=to_data_url(original_preview_source, max_side=600),
+                filtered_preview=to_data_url(output_path, max_side=600),
+                filtered_threads=threads[-1],
+            ))
+            yield stream_event("done", dict(successful=len(rows), total=len(threads)))
+        except Exception as exc:
+            yield stream_event("error", dict(message=str(exc)))
+        finally:
+            shutil.rmtree(preview_dir, ignore_errors=True)
+
+    return Response(
+        stream_with_context(generate_benchmark()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.errorhandler(413)

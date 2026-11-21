@@ -69,6 +69,7 @@
   .explanation p { margin:0 0 8px; }
   .results { min-width:0; }
   .result-empty { min-height:410px; padding:26px; display:grid; place-items:center; text-align:center; background:var(--surface); border:1px solid var(--line); box-shadow:var(--shadow); }
+  .result-empty[hidden],.live-progress[hidden],.benchmark-out[hidden],.worker-visual[hidden] { display:none !important; }
   .empty-mark { width:62px; height:62px; margin:0 auto 17px; display:grid; place-items:center; border:1px solid #9bb2a2; color:var(--green); font:18px "DM Mono",monospace; }
   .result-empty h3 { margin:0 0 8px; font-size:16px; }
   .result-empty p { max-width:370px; margin:0; color:var(--muted); font-size:12px; line-height:1.65; }
@@ -419,7 +420,25 @@ function updateRunControls() {
   $('#runButtonLabel').textContent = scaling ? 'Run scalability test' : 'Run image filter';
 }
 
-document.querySelectorAll('input[name="source"],input[name="task"]').forEach(input => input.addEventListener('change',updateRunControls));
+function clearInspectOutput() {
+  $('#procResults').replaceChildren();
+  $('#benchOut').hidden = true;
+  $('#liveProgress').hidden = true;
+  $('#liveProgress').classList.remove('done','failed');
+  $('#workerVisual').hidden = true;
+  $('#workerLegend').replaceChildren();
+  $('#workerCanvas').getContext('2d').clearRect(0,0,$('#workerCanvas').width,$('#workerCanvas').height);
+  workerMap = null;
+  $('#resultEmpty').hidden = false;
+  showMessage($('#procMsg'),'Choose a source and run an image operation.',false);
+}
+
+document.querySelectorAll('input[name="source"],input[name="task"]').forEach(input => {
+  input.addEventListener('change',() => {
+    updateRunControls();
+    clearInspectOutput();
+  });
+});
 updateRunControls();
 
 function showMessage(node, text, isError) {
@@ -462,11 +481,15 @@ function updateLiveProgress(progress) {
   const panel = $('#liveProgress');
   panel.hidden = false;
   panel.classList.remove('done','failed');
-  $('#liveTitle').textContent = `${phaseNames[progress.phase]} · ${progress.filename}`;
-  $('#liveCount').textContent = `Image ${progress.index} / ${progress.total}`;
+  $('#liveTitle').textContent = progress.filename
+    ? `${phaseNames[progress.phase]} · ${progress.filename}`
+    : phaseNames[progress.phase];
+  $('#liveCount').textContent = progress.index
+    ? `Image ${progress.index} / ${progress.total}`
+    : '';
   $('#liveDetail').textContent = progress.detail;
   if (progress.phase === 'prepare') $('#workerVisual').hidden = true;
-  if (progress.phase === 'parallel' && (!workerMap || workerMap.index !== progress.index)) setupWorkerMap(progress);
+  if (progress.index && progress.phase === 'parallel' && (!workerMap || workerMap.index !== progress.index)) setupWorkerMap(progress);
   const phases = [...panel.querySelectorAll('.live-phase')];
   const current = phases.findIndex(step => step.dataset.phase === progress.phase);
   phases.forEach((step, index) => {
@@ -507,7 +530,7 @@ function setupWorkerMap(progress) {
     top.append(swatch,name,percent); lane.append(top,track,status); legend.append(lane);
     state.lanes.push({lane,percent,fill,status});
   }
-  const file = fileInput.files[progress.index - 1];
+  const file = progress.preview ? null : fileInput.files[progress.index - 1];
   if (file || progress.preview) {
     const source = new Image();
     const objectUrl = file ? URL.createObjectURL(file) : null;
@@ -623,6 +646,9 @@ async function runImageFilter() {
   $('#procResults').replaceChildren(); $('#resultEmpty').hidden = true;
   $('#benchOut').hidden = true;
   $('#liveProgress').hidden = true;
+  $('#workerVisual').hidden = true;
+  $('#workerLegend').replaceChildren();
+  $('#workerCanvas').getContext('2d').clearRect(0,0,$('#workerCanvas').width,$('#workerCanvas').height);
   workerMap = null;
   showMessage($('#procMsg'), `Starting ${total} image${total === 1 ? '' : 's'}...`, false);
   try {
@@ -711,7 +737,16 @@ async function runScalabilityTest() {
     mode:form.get('mode'), threads:[...new Set(threadValues)], gray:form.get('gray') === 'on'
   };
   const button = $('#procBtn'); button.disabled = true;
-  $('#procResults').replaceChildren(); $('#liveProgress').hidden = true;
+  $('#procResults').replaceChildren();
+  $('#workerVisual').hidden = true;
+  $('#workerLegend').replaceChildren();
+  $('#workerCanvas').getContext('2d').clearRect(0,0,$('#workerCanvas').width,$('#workerCanvas').height);
+  workerMap = null;
+  $('#liveProgress').hidden = false;
+  $('#liveProgress').classList.remove('done','failed');
+  $('#liveTitle').textContent = 'Starting scalability benchmark';
+  $('#liveCount').textContent = '';
+  $('#liveDetail').textContent = 'Preparing the source and sequential reference.';
   $('#resultEmpty').hidden = true; $('#benchOut').hidden = true;
   showMessage($('#procMsg'),'Running a sequential baseline and repeating the same input/filter with each thread count. This can take several minutes for large images.',false);
   try {
@@ -729,8 +764,24 @@ async function runScalabilityTest() {
       options = {method:'POST',body:payload};
     }
     const response = await fetch('/api/benchmark',options);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || `Request failed (${response.status}).`);
+    }
+    let data = null;
+    let completed = false;
+    for await (const item of readEventStream(response)) {
+      if (item.event === 'progress') updateLiveProgress(item.payload);
+      else if (item.event === 'result') data = item.payload;
+      else if (item.event === 'done') {
+        completed = true;
+        $('#liveProgress').classList.add('done');
+        $('#liveTitle').textContent = 'Scalability benchmark complete';
+        $('#liveDetail').textContent = `${item.payload.successful} of ${item.payload.total} thread-count runs completed.`;
+        $('#workerVisual').hidden = true;
+      } else if (item.event === 'error') throw new Error(item.payload.message);
+    }
+    if (!completed || !data) throw new Error('The benchmark stream ended before completion.');
     $('#benchmarkPreview').src = data.original_preview;
     $('#benchmarkResultPreview').src = data.filtered_preview;
     $('#benchmarkPreviewCaption').textContent = `Input · ${data.source} · ${data.width} × ${data.height}`;
@@ -758,8 +809,14 @@ async function runScalabilityTest() {
       table.append(tr);
     }
     $('#benchOut').hidden = false;
+    $('#procResults').replaceChildren();
+    $('#resultEmpty').hidden = true;
+    $('#liveProgress').hidden = true;
     showMessage($('#procMsg'),`Scalability test finished for ${data.source}. The displayed filtered result came from the last thread-count run.`,false);
   } catch (error) {
+    $('#liveProgress').classList.add('failed');
+    $('#liveTitle').textContent = 'Scalability benchmark stopped';
+    $('#liveDetail').textContent = explainRequestError(error);
     showMessage($('#procMsg'),explainRequestError(error),true);
   } finally { button.disabled = false; }
 }
