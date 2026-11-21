@@ -1,79 +1,234 @@
-# Parallel Image Convolution / Filtering
+<div align="center">
 
-A Parallel and Distributed Computing course project that applies image filters using C++17 and OpenMP on a single multi-core node. The Flask UI lets you upload an image or generate a synthetic one, choose a filter, then either inspect one filtered result or measure scalability on that same source across thread counts.
+# Parallel Image Convolution using OpenMP
 
-## How the project works
+**Sequential vs parallel image filtering with C++17, OpenMP and a Flask web interface**
 
-1. Choose up to five uploaded images or generate one synthetic test image. Flask/Pillow converts uploads to the PPM format used by the C++ engine. Grayscale is optional; otherwise pixels are processed as RGB.
-2. The C++ engine applies a convolution kernel. For each output pixel it multiplies the surrounding `k x k` pixels by kernel weights and sums them. Image boundaries use clamp-to-edge padding.
-3. Choose **Filter image** for one sequential-versus-parallel result, or **Measure scalability** to compare several thread counts. Scalability reuses the selected source, filter, and kernel; only the thread count changes. In row mode, OpenMP statically schedules rows. In tile mode, it dynamically schedules 64 x 64 image regions.
-4. The engine compares parallel output with sequential output byte by byte. Flask returns the input and filtered previews, timings, speedup, efficiency, and correctness results.
+![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
+![OpenMP](https://img.shields.io/badge/OpenMP-parallel-166B50)
+![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-web%20UI-000000?logo=flask&logoColor=white)
 
-Each output pixel reads only the unchanged input image, so different output pixels can be computed independently. The approximate work is `O(width x height x channels x kernel_size^2)`.
+[Demo Video](YOUR_DRIVE_LINK) · [Features](#features) · [Results](#results) · [Getting Started](#getting-started)
 
-## Build on Windows with MSYS2 UCRT64
+</div>
 
-Use an **MSYS2 UCRT64** terminal for compiling, not the old MinGW compiler. Install GCC, make, and the OpenMP runtime if needed:
+---
 
-```bash
-pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-libgomp
+## Table of Contents
+
+- [Overview](#overview)
+- [Demo](#demo)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Parallelization Strategies](#parallelization-strategies)
+- [Performance Metrics](#performance-metrics)
+- [Results](#results)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Troubleshooting](#troubleshooting)
+- [Challenges](#challenges)
+- [Future Work](#future-work)
+- [Team](#team)
+
+---
+
+## Overview
+
+Applying convolution filters to large, high-resolution images is slow when done sequentially, especially with large kernels. However, **every output pixel is computed only from the original input**, so pixels are independent and can be processed in parallel.
+
+This project implements image convolution in **C++17** with **OpenMP**, compares it against a sequential reference, and wraps everything in a **Flask web interface** where you can upload an image, choose a filter, run it, and inspect timing, speedup, efficiency and correctness.
+
+**Goals**
+
+- Implement sequential and OpenMP-parallel convolution
+- Compare **Row** and **Tile** scheduling strategies
+- Measure speedup and efficiency across thread counts
+- Verify that parallel output matches the sequential output exactly
+- Provide a simple, user-friendly web interface
+
+## Demo
+
+> 🎥 **Demo video:** [Watch on Google Drive](YOUR_DRIVE_LINK)
+
+![Web interface](docs/images/ui-home.png)
+
+## Features
+
+- Upload your own images (PNG, JPEG, BMP, TIFF; up to 5 images, 200 MB total)
+- Generate a deterministic synthetic test image (for example 3000 × 3000)
+- Six filters: **Blur, Gaussian, Sharpen, Edge, Sobel, Emboss**
+- Odd kernel sizes from **3 to 51**
+- Optional **grayscale** processing
+- **Row** and **Tile** parallel strategies
+- Selectable OpenMP thread count
+- **Measure scalability** mode (for example 1, 2, 4, 8 threads) with time, speedup and efficiency charts
+- Automatic **pixel-by-pixel correctness verification** against the sequential result
+
+## How It Works
+
+```
+Upload image → Flask converts to PPM → C++ engine → OpenMP execution → Output + timing + verification
+                                                     (Sequential / Rows / Tiles)
 ```
 
-Build the executable from the repository's `backend/` directory:
+1. The user uploads an image (or generates a test image) in the web UI.
+2. Flask converts the image to **PPM** format.
+3. The **C++ engine** applies the selected convolution filter.
+4. The execution mode runs: sequential reference, row-wise parallel, or tile-based parallel.
+5. The UI shows the filtered image, timings, speedup, efficiency and the verification result.
 
-```bash
-cd /c/path/to/pdc-convolution/backend
-make CXX=g++ CXXFLAGS="-O2 -std=c++17 -fopenmp -Wall -Wextra"
+### Convolution
+
+Each output pixel is the weighted sum of its neighbours, using the kernel weights:
+
+```
+P_new = Σ (Pixel × Kernel)
 ```
 
-The expected output is `backend/bin/convolve.exe`.
+A 3×3 kernel reads 9 pixels per output pixel; a 9×9 kernel reads 81, so larger kernels do much more work.
 
-## Start the web UI on Windows
+## Parallelization Strategies
 
-In PowerShell, from the repository directory:
+| Strategy | How work is divided | Scheduling | Notes |
+|---|---|---|---|
+| **Rows** | Image rows are split across threads | Static | Simple and effective |
+| **Tiles** | Image is split into 64×64 blocks | Dynamic | Better load balancing for uneven work |
 
-```powershell
-cd frontend
-python -m pip install -r requirements.txt
-$env:MSYS2_UCRT64_BIN = "C:\msys64\ucrt64\bin"
+```cpp
+#pragma omp parallel for
+for (int y = 0; y < height; y++) {
+    // process pixels in row y
+}
+```
+
+Tile mode visualization: each colour is a different thread processing its own tiles.
+
+![Tile visualization](docs/images/tile-visualization.png)
+
+## Performance Metrics
+
+```
+Speedup    = Sequential Time / Parallel Time
+Efficiency = (Speedup / Thread Count) × 100
+```
+
+Every parallel result is compared with the sequential output and reported as an **exact match** or a mismatch.
+
+## Results
+
+### Scalability test
+
+**Setup:** synthetic 3000 × 3000 image, Gaussian blur, 9 × 9 kernel, Tiles strategy, machine with 4 logical CPU cores.
+
+| Run | Threads | Time (ms) | Speedup | Efficiency | Correct |
+|---|---:|---:|---:|---:|---|
+| Sequential baseline | 1 | 5696.0 | 1.00 | 100.0% | Reference |
+| OpenMP tiles | 1 | 4217.0 | 1.35 | 135.1% | Exact |
+| OpenMP tiles | 2 | 2982.0 | 1.91 | 95.5% | Exact |
+| OpenMP tiles | 4 | 2385.0 | 2.39 | 59.7% | Exact |
+| OpenMP tiles | 8 | 2362.0 | 2.41 | 30.1% | Exact |
+
+![Scalability results](docs/images/scalability-results.png)
+
+**Observations**
+
+- Time drops from **5696 ms to 2362 ms** (best speedup **2.41×**), and all runs are an exact match.
+- Gains flatten after 4 threads because the test machine has only **4 logical cores**; extra threads add overhead.
+- Speedup is not linear because of memory bandwidth limits and scheduling overhead.
+- The 1-thread tiled run is faster than the sequential baseline (135% efficiency), likely because of better cache locality from tile-based memory access.
+
+### Real image test
+
+**Setup:** 1182 × 627 screenshot, Gaussian blur, 9 × 9 kernel, 4 threads, Tiles.
+
+| Sequential | OpenMP | Speedup | Efficiency | Output |
+|---:|---:|---:|---:|---|
+| 502.0 ms | 299.0 ms | 1.68× | 42% | Exact match |
+
+Smaller images spend a larger share of time on overhead, so the speedup is lower than in the 3000 × 3000 case.
+
+![Real image result](docs/images/real-image-result.png)
+
+## Tech Stack
+
+| Area | Technology |
+|---|---|
+| Engine | C++17, OpenMP |
+| Compiler | GCC (MSYS2 UCRT64) |
+| Backend | Python, Flask |
+| Image handling | Pillow |
+| Frontend | HTML / CSS |
+
+## Getting Started
+
+### Prerequisites
+
+- **GCC with OpenMP support** (on Windows: [MSYS2](https://www.msys2.org/) UCRT64 toolchain)
+- **Python 3.x**
+- Python packages: `flask`, `pillow`
+
+### Installation
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
+
+# 2. Install Python dependencies
+pip install flask pillow
+```
+
+### Build the C++ engine
+
+```bash
+# Replace the file names with the ones used in this repository
+g++ -std=c++17 -O2 -fopenmp <engine_source>.cpp -o <engine_output>
+```
+
+### Run the web app
+
+```bash
 python app.py
 ```
 
-Open <http://127.0.0.1:5000>. The app also checks the default MSYS2 path automatically. If MSYS2 is installed elsewhere, set `MSYS2_UCRT64_BIN` to that installation's `ucrt64\bin` directory before starting Flask. This ensures Windows loads the UCRT64 `libgomp-1.dll` used by the compiled engine instead of a conflicting runtime earlier on `PATH`.
+Then open the address shown in the terminal (usually `http://127.0.0.1:5000`). The page shows **"C++ engine found"** when the engine is built correctly.
 
-In the UI, first choose **Upload my image** or **Generate test image**, then set the filter, kernel size, and row/tile strategy. **Filter image** applies one thread count and shows the output; **Measure scalability** reuses that same input and settings for every listed thread count, showing input/output previews, charts, and per-run correctness. Open the filter help in the UI for kernel details.
+### Using the interface
 
-## Run the benchmark
+1. Choose **Upload my image** or **Generate test image** (for example 3000).
+2. Select a **filter** and **kernel size** (odd, 3 to 51).
+3. Choose **Filter image** or **Measure scalability**.
+4. Choose the parallel strategy (**Rows** or **Tiles**) and thread count(s).
+5. Click **Run image filter** or **Run scalability test** and inspect the results.
 
-In PowerShell, install benchmark dependencies and run the script:
-
-```powershell
-cd benchmark
-python -m pip install -r requirements.txt
-python run_benchmark.py --size 3000 --filter gaussian --ksize 9 --repeat 3 --threads 1,2,4,8
-```
-
-The script writes `benchmark/results/benchmark.csv` and execution-time, speedup, and efficiency charts using a deterministic synthetic input. In the web UI, scalability can instead use either the selected uploaded image or a generated image; its downscaled preview is only for display, while computation uses the full-size source. Use a smaller image/kernel for a quick smoke run; larger sizes and kernels take substantially longer. Close other heavy applications for more stable timing.
-
-Speedup is `sequential_time / parallel_time`; values above `1` mean the parallel run was faster. Efficiency is `speedup / thread_count x 100%`. Efficiency can fall as threads increase because of memory bandwidth, scheduling overhead, and the serial portion of execution. Timings measure convolution only, not file conversion, image generation, or correctness verification.
-
-## CLI examples
-
-Run these from `backend/` in the MSYS2 UCRT64 terminal:
-
-```bash
-./bin/convolve.exe --generate 6000x6000 --filter gaussian --ksize 9 --mode seq
-./bin/convolve.exe --generate 6000x6000 --filter gaussian --ksize 9 --mode rows --threads 8 --verify
-./bin/convolve.exe --generate 6000x6000 --filter sobel --mode tiles --threads 8 --tile 64 --verify
-./bin/convolve.exe --input input.ppm --output output.ppm --filter sharpen --mode rows --threads 8
-```
-
-Available filters: `blur`, `gaussian`, `sharpen`, `edge`, `sobel`, `emboss`. Available execution modes: `seq`, `rows`, `tiles`. The C++ command-line engine reads/writes PPM or PGM; the web UI handles common browser image formats through Pillow.
+| Generate test image | Filter image | Measure scalability |
+|:---:|:---:|:---:|
+| ![Generate](docs/images/generate-test-image.png) | ![Filter](docs/images/filter-mode.png) | ![Scalability](docs/images/scalability-mode.png) |
 
 ## Troubleshooting
 
-- **Engine is not built:** build it from `backend/` in the MSYS2 UCRT64 terminal. Confirm `backend/bin/convolve.exe` exists.
-- **Windows cannot load the OpenMP engine / status `0xC000007B`:** set `MSYS2_UCRT64_BIN` to the matching MSYS2 UCRT64 `bin` directory before starting Flask or the benchmark. Confirm `libgomp-1.dll` exists there and rebuild with UCRT64 GCC, not another MinGW distribution.
-- **Unsupported or unreadable image:** use a valid PNG, JPEG, BMP, or TIFF file. Uploads are limited to 200 MB total and five images per batch.
-- **Slow request:** reduce image dimensions or kernel size, or use fewer benchmark thread counts. The UI request has a 30-minute engine limit.
-- **Low speedup:** small images may not provide enough work to offset thread scheduling; try larger images and compare several thread counts.
+- **OpenMP DLL not found (Windows):** make sure the MSYS2 UCRT64 `bin` folder (which contains the OpenMP runtime DLL, typically `libgomp-1.dll`) is on your `PATH`, or run the app from the UCRT64 terminal.
+- **"C++ engine" not found in the UI:** rebuild the engine and check that the output file name matches what `app.py` expects.
+- **Speedup is lower than expected:** thread counts above your number of logical cores will not help; also, small images and small kernels have too little work to hide the parallel overhead.
+
+## Challenges
+
+- OpenMP DLL loading issues on Windows
+- Compiler compatibility on Windows
+- Long processing time on large images
+- Inconsistent speedup across runs
+- Verifying parallel output against sequential output
+
+## Future Work
+
+- GPU / CUDA implementation
+- SIMD optimization
+- Distributed processing
+- More image filters
+- Real-time video processing
+- Better performance visualization
+
+
+
+<sub>Course project: Parallel Image Convolution using OpenMP.</sub>
